@@ -17,18 +17,46 @@ Cargo Features
 #![no_std]
 #![no_main]
 
-use core::panic::PanicInfo;
+#[macro_use]
+extern crate axlog2;
+extern crate alloc;
 
+use core::panic::PanicInfo;
+use axtype::{align_up_4k, align_down_4k, phys_to_virt, virt_to_phys};
+use mutex::Mutex;
+
+/// Entry
 #[no_mangle]
-pub extern "Rust" fn runtime_main(_cpu_id: usize, _dtb_pa: usize) {
-    let msg = "\n[rt_early_console]: ok!\n";
-    early_console::write_bytes(msg.as_bytes());
+pub extern "Rust" fn runtime_main(cpu_id: usize, dtb_pa: usize) {
+    axhal::cpu::init_primary(cpu_id);
+
+    axlog2::init("debug");
+    info!("[rt_mutex]: ...");
+
+    let start = align_up_4k(virt_to_phys(_ekernel as usize));
+    let end = align_down_4k(axconfig::PHYS_MEMORY_END);
+    axalloc::global_init(phys_to_virt(start), end - start);
+
+    run_queue::init(cpu_id, dtb_pa);
+
+    {
+        let mutex: Mutex<u32> = Mutex::new(0);
+        // Todo: do some tests according tests below.
+        info!("{}", *mutex.lock());
+    }
+
+    info!("[rt_mutex]: ok!");
     axhal::misc::terminate();
 }
 
 #[panic_handler]
 pub fn panic(info: &PanicInfo) -> ! {
+    error!("{}", info);
     arch_boot::panic(info)
+}
+
+extern "C" {
+    fn _ekernel();
 }
 ```
 
